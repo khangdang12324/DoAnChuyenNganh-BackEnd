@@ -1,37 +1,33 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const Docker = require('dockerode');
 const { exec } = require('child_process');
 const fs = require('fs-extra');
 const path = require('path');
-const Docker = require('dockerode');
-const mongoose = require('mongoose'); // <--- THÊM
-const bcrypt = require('bcryptjs');   // <--- THÊM
-const jwt = require('jsonwebtoken');  // <--- THÊM
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Kết nối Docker (có bắt lỗi)
+// Docker Init
 let docker;
-try { docker = new Docker(); } catch (e) { console.log("Docker init error"); }
+try { docker = new Docker(); } catch (e) { console.log("Docker error (using Exec fallback)."); }
 
 app.use(cors());
 app.use(express.json());
 
-// ============================================================
-// 1. KẾT NỐI MONGODB (PHẦN THÊM MỚI)
-// ============================================================
+// --- KẾT NỐI DB ---
 const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://dangkhang120304_db_user:%4017Bphuocthanh@cluster0.pse46a4.mongodb.net/ide-online?retryWrites=true&w=majority";
 const JWT_SECRET = process.env.JWT_SECRET || "bi_mat_123";
 
 mongoose.connect(MONGO_URI)
-    .then(() => console.log("✅ Đã kết nối MongoDB thành công!"))
-    .catch(err => console.error("❌ Lỗi kết nối MongoDB:", err));
+    .then(() => console.log("✅ DB Connected!"))
+    .catch(err => console.error("❌ DB Error:", err));
 
-// ============================================================
-// 2. MODELS & AUTH (PHẦN THÊM MỚI)
-// ============================================================
+// --- MODELS ---
 const UserSchema = new mongoose.Schema({
     username: { type: String, required: true, unique: true },
     password: { type: String, required: true }
@@ -40,17 +36,16 @@ const User = mongoose.models.User || mongoose.model('User', UserSchema);
 
 const ProjectSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    projectName: { type: String, default: 'My Project' },
-    vfs: { type: Object, required: true },
+    name: { type: String, required: true }, // Tên dự án
+    vfs: { type: Object, default: { 'main.py': { type: 'file', content: "print('New Project')" } } },
     lastSaved: { type: Date, default: Date.now }
 });
 const Project = mongoose.models.Project || mongoose.model('Project', ProjectSchema);
 
-// Đăng ký
+// --- AUTH APIs ---
 app.post('/register', async (req, res) => {
     try {
         const { username, password } = req.body;
-        if (!username || !password) return res.status(400).json({ error: "Thiếu thông tin!" });
         const hashedPassword = await bcrypt.hash(password, 10);
         const user = new User({ username, password: hashedPassword });
         await user.save();
@@ -58,80 +53,95 @@ app.post('/register', async (req, res) => {
     } catch (err) { res.status(400).json({ error: "Tên đã tồn tại!" }); }
 });
 
-// Đăng nhập
 app.post('/login', async (req, res) => {
     try {
         const { username, password } = req.body;
         const user = await User.findOne({ username });
-        if (!user) return res.status(400).json({ error: "Sai tên đăng nhập!" });
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) return res.status(400).json({ error: "Sai mật khẩu!" });
+        if (!user || !await bcrypt.compare(password, user.password)) 
+            return res.status(400).json({ error: "Sai tài khoản/mật khẩu!" });
+        
         const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '7d' });
-        res.json({ token, username, message: "Đăng nhập thành công!" });
+        res.json({ token, username, message: "Login OK" });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Middleware xác thực
+// Middleware Auth
 const verifyToken = (req, res, next) => {
-    const token = req.headers['authorization'];
-    if (!token) return res.status(401).json({ error: "Chưa đăng nhập!" });
+    const token = req.headers['authorization']?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: "Unauthorized" });
     try {
-        const cleanToken = token.replace('Bearer ', '');
-        const decoded = jwt.verify(cleanToken, JWT_SECRET);
+        const decoded = jwt.verify(token, JWT_SECRET);
         req.userId = decoded.id;
         next();
-    } catch (err) { res.status(401).json({ error: "Token lỗi!" }); }
+    } catch (err) { res.status(401).json({ error: "Token Invalid" }); }
 };
 
-// API Lưu/Tải
-app.post('/save-project', verifyToken, async (req, res) => {
+// --- PROJECT APIs (QUAN TRỌNG MỚI) ---
+
+// 1. Lấy danh sách tất cả dự án của User
+app.get('/projects', verifyToken, async (req, res) => {
+    try {
+        // Chỉ lấy _id và name (không lấy nội dung code cho nhẹ)
+        const projects = await Project.find({ userId: req.userId }).select('_id name lastSaved').sort({ lastSaved: -1 });
+        res.json(projects);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 2. Tạo dự án mới
+app.post('/projects', verifyToken, async (req, res) => {
+    try {
+        const { name } = req.body;
+        const newProject = new Project({ userId: req.userId, name });
+        await newProject.save();
+        res.json(newProject);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 3. Lấy chi tiết 1 dự án (để mở)
+app.get('/projects/:id', verifyToken, async (req, res) => {
+    try {
+        const project = await Project.findOne({ _id: req.params.id, userId: req.userId });
+        if (!project) return res.status(404).json({ error: "Không tìm thấy dự án" });
+        res.json(project);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 4. Lưu code vào dự án (Update)
+app.put('/projects/:id', verifyToken, async (req, res) => {
     try {
         const { vfs } = req.body;
-        let project = await Project.findOne({ userId: req.userId });
-        if (project) {
-            project.vfs = vfs; project.lastSaved = Date.now(); await project.save();
-        } else {
-            project = new Project({ userId: req.userId, vfs }); await project.save();
-        }
-        res.json({ message: "Đã lưu thành công!" });
+        await Project.findOneAndUpdate(
+            { _id: req.params.id, userId: req.userId },
+            { vfs, lastSaved: Date.now() }
+        );
+        res.json({ message: "Đã lưu!" });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/get-project', verifyToken, async (req, res) => {
-    try {
-        const project = await Project.findOne({ userId: req.userId });
-        if (!project) return res.json({ vfs: null });
-        res.json({ vfs: project.vfs });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
 
-// ============================================================
-// 5. LOGIC CHẠY CODE (GIỮ NGUYÊN CỦA BẠN)
-// ============================================================
-
-const runDocker = async (language, code) => {
+// --- RUN CODE (HYBRID) ---
+const runWithDocker = async (language, code) => {
     let image = ''; let cmd = [];
     switch (language) {
         case 'python': image = 'python:3.10-alpine'; cmd = ['python', '-c', code]; break;
         case 'javascript': image = 'node:18-alpine'; cmd = ['node', '-e', code]; break;
-        default: throw new Error(`Docker: Ngôn ngữ ${language} không được hỗ trợ.`);
+        default: throw new Error(`Docker: Ngôn ngữ ${language} chưa hỗ trợ.`);
     }
-    if (!docker) throw new Error("Docker not init");
     const container = await docker.createContainer({
         Image: image, Cmd: cmd, AttachStdout: true, AttachStderr: true, Tty: false, HostConfig: { AutoRemove: true }
     });
     await container.start();
-    const steamToString = (stream) => new Promise((resolve, reject) => {
+    const streamToString = (stream) => new Promise((resolve, reject) => {
         const chunks = [];
         stream.on('data', c => chunks.push(c));
         stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8').substring(8)));
         stream.on('error', reject);
     });
     const logStream = await container.logs({ stdout: true, stderr: true });
-    return await steamToString(logStream);
-}
+    return await streamToString(logStream);
+};
 
-const runExec = (language, code) => {
+const runWithExec = (language, code) => {
     return new Promise((resolve, reject) => {
         const tempDir = path.join(__dirname, 'temp');
         fs.ensureDirSync(tempDir);
@@ -148,26 +158,16 @@ const runExec = (language, code) => {
 };
 
 const runCode = async (language, code) => {
-    try {
-        console.log('Chay trong Docker...');
-        return await runDocker(language, code);
-    } catch (err) {
-        console.log('Docker khong hoat dong, chay bang exec...');
-        return await runExec(language, code);
-    }
+    try { return await runWithDocker(language, code); } 
+    catch (err) { return await runWithExec(language, code); }
 };
 
 app.post('/run', async (req, res) => {
-    let { language, code } = req.body;
-    if (language === 'py') language = 'python';
-    if (language === 'js') language = 'javascript';
-    if (!code) return res.status(400).json({ error: 'Khong co ma nguon de chay.' });
+    const { language, code } = req.body;
     try {
         const output = await runCode(language, code);
-        res.json({ output: output, error: null });
-    } catch (err) { res.json({ output: null, error: err.message }); }
+        res.json({ output, error: null });
+    } catch (e) { res.json({ output: null, error: e.message }); }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server đang chạy tại http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on ${PORT}`));
