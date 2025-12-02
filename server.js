@@ -171,3 +171,12 @@ app.post('/run', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+
+// Xóa dự án
+app.delete('/projects/:id', verifyToken, async (req, res) => {
+    try {
+        const result = await Project.findOneAndDelete({ _id: req.params.id, userId: req.userId });
+        if (!result) return res.status(404).json({ error: "Không tìm thấy dự án" });
+        res.json({ message: "Đã xóa dự án!" });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
