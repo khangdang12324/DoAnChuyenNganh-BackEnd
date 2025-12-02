@@ -106,15 +106,21 @@ app.get('/projects/:id', verifyToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 4. Lưu code vào dự án (Update)
+// 4. Cập nhật dự án (Lưu code HOẶC Đổi tên)
 app.put('/projects/:id', verifyToken, async (req, res) => {
     try {
-        const { vfs } = req.body;
+        const { vfs, name } = req.body; // Lấy cả name
+        
+        // Tạo object chứa dữ liệu cần update
+        const updateData = { lastSaved: Date.now() };
+        if (vfs) updateData.vfs = vfs;   // Nếu có code thì cập nhật code
+        if (name) updateData.name = name; // Nếu có tên thì cập nhật tên
+
         await Project.findOneAndUpdate(
             { _id: req.params.id, userId: req.userId },
-            { vfs, lastSaved: Date.now() }
+            updateData
         );
-        res.json({ message: "Đã lưu!" });
+        res.json({ message: "Cập nhật thành công!" });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
