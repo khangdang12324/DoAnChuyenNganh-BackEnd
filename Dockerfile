@@ -1,38 +1,35 @@
-# 1. Chọn nền tảng Node.js (Alpine Linux cho nhẹ)
-FROM node:18-alpine
+# 1. Đổi sang dùng Debian (Bullseye) thay vì Alpine
+# Debian hỗ trợ Mono (C#) và các ngôn ngữ khác tốt hơn nhiều
+FROM node:18-bullseye
 
-# 2. CÀI ĐẶT KHO CHỨA (Repository) để tải được C# (Mono)
-RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories
-
-# 3. CÀI ĐẶT TẤT CẢ NGÔN NGỮ (QUAN TRỌNG NHẤT)
-# Render sẽ chạy lệnh này để cài đặt phần mềm vào server của nó
-RUN apk update && apk add --no-cache \
-    bash \
-    build-base \
+# 2. CẬP NHẬT VÀ CÀI ĐẶT CÁC NGÔN NGỮ
+# Lưu ý: Tên gói trên Debian khác Alpine một chút
+RUN apt-get update && apt-get install -y \
+    python3 \
     g++ \
     gcc \
     make \
-    python3 \
-    openjdk17 \
+    openjdk-17-jdk \
     php \
-    go \
+    golang-go \
     ruby \
-    mono
+    mono-complete \
+    bash
 
-# 4. Thiết lập thư mục
+# 3. Thiết lập thư mục làm việc
 WORKDIR /app
 
-# 5. Cài thư viện Node
+# 4. Copy và cài thư viện Node.js
 COPY package*.json ./
 RUN npm install
-# Cài TypeScript toàn cục để chạy lệnh 'ts-node'
+# Cài TypeScript toàn cục
 RUN npm install -g ts-node typescript
 
-# 6. Copy code server vào
+# 5. Copy toàn bộ code backend
 COPY . .
 
-# 7. Mở cổng
+# 6. Mở cổng
 EXPOSE 3000
 
-# 8. Chạy server
+# 7. Chạy server
 CMD ["node", "server.js"]

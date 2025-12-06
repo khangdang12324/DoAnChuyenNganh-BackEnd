@@ -142,17 +142,20 @@ const runWithExec = (language, code) => {
                 cmd = `ruby "${filePath}"`;
                 break;
 
-            // --- C# ---
+   
+        // --- C# (CSHARP) ---
             case 'cs':
             case 'csharp':
                 fileName = `job_${jobId}.cs`;
                 const exeC = `job_${jobId}.exe`;
                 filePath = path.join(tempDir, fileName);
                 fs.writeFileSync(filePath, code);
+                
                 if (isWin) {
+                    // Windows
                     cmd = `cd "${tempDir}" && csc /nologo /out:"${exeC}" "${fileName}" && "${exeC}"`;
                 } else {
-                    // Linux Alpine dùng Mono
+                    // Linux (Debian/Render) dùng 'mcs' để biên dịch và 'mono' để chạy
                     cmd = `cd "${tempDir}" && mcs -out:"${exeC}" "${fileName}" && mono "${exeC}"`;
                 }
                 break;
