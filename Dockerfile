@@ -1,38 +1,38 @@
-# 1. Chọn hệ điều hành nền là Node.js (Alpine Linux cho nhẹ)
+# 1. Chọn nền tảng Node.js (Alpine Linux cho nhẹ)
 FROM node:18-alpine
 
-# 2. CÀI ĐẶT CÁC NGÔN NGỮ (QUAN TRỌNG NHẤT)
-# Đây là bước cài Java, Python, C++, PHP... cho máy chủ Render
-# (Giống như lúc nãy bạn cài thủ công trên Windows, nhưng đây là tự động)
+# 2. CÀI ĐẶT KHO CHỨA (Repository) để tải được C# (Mono)
+RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories
+
+# 3. CÀI ĐẶT TẤT CẢ NGÔN NGỮ (QUAN TRỌNG NHẤT)
+# Render sẽ chạy lệnh này để cài đặt phần mềm vào server của nó
 RUN apk update && apk add --no-cache \
-    python3 \
-    py3-pip \
+    bash \
+    build-base \
     g++ \
     gcc \
     make \
+    python3 \
     openjdk17 \
     php \
     go \
     ruby \
-    bash
+    mono
 
-# 3. Thiết lập thư mục làm việc
+# 4. Thiết lập thư mục
 WORKDIR /app
 
-# 4. Copy file package.json vào trước để cài thư viện
+# 5. Cài thư viện Node
 COPY package*.json ./
-
-# 5. Cài đặt các thư viện Node.js (Express, Mongoose...)
 RUN npm install
-
-# 6. Cài thêm TypeScript và ts-node toàn cục
+# Cài TypeScript toàn cục để chạy lệnh 'ts-node'
 RUN npm install -g ts-node typescript
 
-# 7. Copy toàn bộ code backend vào
+# 6. Copy code server vào
 COPY . .
 
-# 8. Mở cổng 3000
+# 7. Mở cổng
 EXPOSE 3000
 
-# 9. Lệnh chạy server
+# 8. Chạy server
 CMD ["node", "server.js"]
