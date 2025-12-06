@@ -165,12 +165,12 @@ const runWithExec = (language, code) => {
                 break;
             
             case 'ts':
+           case 'ts':
             case 'typescript':
-                // Yêu cầu cài: npm install -g ts-node
                 fileName = `job_${jobId}.ts`;
                 filePath = path.join(tempDir, fileName);
                 fs.writeFileSync(filePath, code);
-                cmd = `ts-node "${filePath}"`; 
+                cmd = `npx ts-node "${filePath}"`; 
                 break;
 
             // --- JAVA (Phức tạp nhất vì tên file phải trùng tên Class) ---
