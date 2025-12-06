@@ -32,7 +32,7 @@ const User = mongoose.models.User || mongoose.model('User', UserSchema);
 const ProjectSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     name: { type: String, required: true },
-    vfs: { type: Object, default: {} }, // Lưu cấu trúc file
+    vfs: { type: Object, default: {} }, 
     lastSaved: { type: Date, default: Date.now }
 });
 const Project = mongoose.models.Project || mongoose.model('Project', ProjectSchema);
@@ -117,17 +117,15 @@ app.delete('/projects/:id', verifyToken, async (req, res) => {
 
 const runWithExec = (language, code) => {
     return new Promise((resolve, reject) => {
-        // Tạo thư mục tạm
         const tempDir = path.join(__dirname, 'temp');
         fs.ensureDirSync(tempDir);
 
-        const jobId = Date.now(); // ID duy nhất
-        const isWin = process.platform === "win32"; // Kiểm tra Windows hay Linux/Mac
+        const jobId = Date.now(); 
+        const isWin = process.platform === "win32"; 
         let cmd = '';
         let fileName = '';
         let filePath = '';
 
-        // Xử lý logic từng ngôn ngữ
         switch (language) {
             // --- C / C++ ---
             case 'c':
@@ -136,25 +134,26 @@ const runWithExec = (language, code) => {
                 const compiler = language === 'c' ? 'gcc' : 'g++';
                 fileName = `job_${jobId}.${ext}`;
                 filePath = path.join(tempDir, fileName);
-                const outPath = path.join(tempDir, `job_${jobId}.exe`); // .exe cho Windows, Linux tự bỏ đuôi
+                const outPath = path.join(tempDir, `job_${jobId}.exe`); 
                 
                 fs.writeFileSync(filePath, code);
-                // Lệnh: g++ file.cpp -o file.exe && file.exe
                 const runC = isWin ? `"${outPath}"` : `./"${path.basename(outPath)}"`;
-                // cd vào thư mục temp trước để tránh lỗi đường dẫn
                 cmd = `cd "${tempDir}" && ${compiler} "${fileName}" -o "${path.basename(outPath)}" && ${runC}`;
                 break;
 
-            // --- PYTHON ---
+       // --- PYTHON (Code thông minh: Tự chọn lệnh) ---
             case 'py':
             case 'python':
                 fileName = `job_${jobId}.py`;
                 filePath = path.join(tempDir, fileName);
                 fs.writeFileSync(filePath, code);
-                // Lệnh: python file.py (hoặc python3)
-                cmd = `python "${filePath}"`; 
+                
+                // Kiểm tra hệ điều hành để chọn lệnh phù hợp
+                const isWin = process.platform === "win32";
+                const pyCmd = isWin ? "python" : "python3"; 
+                
+                cmd = `${pyCmd} "${filePath}"`; 
                 break;
-
             // --- JAVASCRIPT / TYPESCRIPT ---
             case 'js':
             case 'javascript':
